@@ -50,7 +50,7 @@ It is the only harness to combine native multi-format ingestion (rather than res
 
 ## Contact Labs quickstart
 
-This fork ([contact-labs/argus](https://github.com/contact-labs/argus)) tracks upstream and adds one thing: capped runs accept Claude Sonnet 5.5 and Claude Opus 5.5 through OpenRouter, priced from [`OPENROUTER_PRICES`](label/harness.py#L80). One OpenRouter key covers every model the pipeline calls, including GPT-6 Sol, which the harness uses on its own for resolution routing and field interpretation.
+This fork ([contact-labs/argus](https://github.com/contact-labs/argus)) tracks upstream and adds one thing: capped runs accept Claude Sonnet 5.5 and Claude Opus 5.5 through OpenRouter, priced from `OPENROUTER_PRICES` in [`label/harness.py`](label/harness.py). One OpenRouter key covers every model the pipeline calls, including GPT-6 Sol, which the harness uses on its own for resolution routing and field interpretation.
 
 ```console
 brew install uv ffmpeg node                 # node only for the viewer tests
@@ -67,7 +67,7 @@ data/incoming/<batch>/
   ep002/...
 ```
 
-Separate video files share no clock, so each camera is aligned from its own first frame. To align them on the recorder's clock, save each camera's per-frame capture times beside its video as a `.npy` whose name carries the camera's words and `timestamp` (`head-timestamp.npy`, one rising number per frame, in s, ms, us or ns), as [`frame_times`](prepare/formats.py#L3480) reads. Recorded state, depth and other sensors are read from a LeRobot dataset, MCAP or HDF5 file in the same folder, never from loose arrays.
+Separate video files share no clock, so each camera is aligned from its own first frame. To align them on the recorder's clock, save each camera's per-frame capture times beside its video as a `.npy` whose name carries the camera's words and `timestamp` (`head-timestamp.npy`, one rising number per frame, in s, ms, us or ns), as `frame_times` in [`prepare/formats.py`](prepare/formats.py) reads. Recorded state, depth and other sensors are read from a LeRobot dataset, MCAP or HDF5 file in the same folder, never from loose arrays.
 
 ```console
 # free: read, check, build every request, serve the board, no model call

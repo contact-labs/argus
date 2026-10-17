@@ -149,6 +149,41 @@ def test_a_capped_run_reserves_openrouter_models_at_their_listed_rates():
         harness.final_cost_bound(content, 2000, model='anthropic/claude-haiku-5.5')
 
 
+def test_the_cap_gate_passes_an_openrouter_priced_model_before_any_spend(tmp_path, monkeypatch):
+    """label_episode's pre-route gate (require_known_pricing, set on every capped run) refuses a model with no known
+    rates before anything is spent, lets an OPENROUTER_PRICES model through to the rest of the call, and still
+    refuses a non-OpenAI model on a key that goes straight to OpenAI."""
+    ep = tmp_path / 'episode_x'
+    ep.mkdir()
+    (ep / 'context.json').write_text(json.dumps({'profile': 'teleop_arms'}))
+
+    class Reached(Exception):
+        pass
+
+    def stop(*a, **k):
+        raise Reached
+
+    monkeypatch.setattr(harness, 'input_identity', stop)       # the first thing after the gates
+    kw = dict(reasoning=None, max_tokens=100, timeout=1, require_known_pricing=True)
+    with pytest.raises(ValueError, match='known rates'):
+        harness.label_episode(ep, tmp_path / 'out.json', model='anthropic/claude-haiku-5.5', api_key='sk-or-x', **kw)
+    with pytest.raises(Reached):
+        harness.label_episode(ep, tmp_path / 'out.json', model='anthropic/claude-sonnet-5.5', api_key='sk-or-x', **kw)
+    with pytest.raises(ValueError, match='OpenRouter key'):
+        harness.label_episode(ep, tmp_path / 'out.json', model='anthropic/claude-sonnet-5.5', api_key='sk-openai', **kw)
+
+
+def test_a_dropped_receipt_settles_an_openrouter_model_at_its_listed_rates():
+    """When OpenRouter's response carries tokens but no billed cost, a Claude call settles at OPENROUTER_PRICES as an
+    estimate, as an OpenAI call does at its list price, instead of leaving the whole reserve held as unverified; a
+    model with no known rates stays unverified, and a billed cost always wins."""
+    usage = {'prompt_tokens': 1000, 'completion_tokens': 100}
+    assert harness._verified_final_cost(usage, 'anthropic/claude-sonnet-5.5') == (pytest.approx(0.003), 'estimate')
+    assert harness._verified_final_cost(usage, 'openai/gpt-6-sol') == (pytest.approx(0.003), 'estimate')
+    assert harness._verified_final_cost(usage, 'anthropic/claude-haiku-5.5') == (None, 'unverified')
+    assert harness._verified_final_cost({**usage, 'cost': 0.0021}, 'anthropic/claude-sonnet-5.5') == (0.0021, 'billed')
+
+
 def test_depth_presentation_origin_does_not_depend_on_rgb_times(tmp_path, monkeypatch):
     from test_camera_timing import recording
     ep = recording(tmp_path, np.arange(60) / 30)

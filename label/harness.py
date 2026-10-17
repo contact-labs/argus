@@ -145,17 +145,28 @@ def _verified_final_cost(usage: dict, model: str) -> tuple[float | None, str]:
                 return float(value), source
         except OverflowError:
             pass
-    if (not _complete_token_usage(usage) or not model.startswith("openai/")
-            or model.split("/", 1)[-1] not in OPENAI_PRICES):
+    if not _complete_token_usage(usage) or known_rates(model) is None:
         return None, "unverified"
     try:
-        listed = openai_list_cost(model, usage)
-        cost = listed
+        cost = list_cost(model, usage)
         if cost is not None and math.isfinite(cost) and cost >= 0:
             return cost, "estimate"
     except OverflowError:
         pass
     return None, "unverified"
+
+
+def list_cost(model: str, usage: dict) -> float | None:
+    """What a call costs at list price when its response carries tokens but no billed cost: openai_list_cost for
+    an openai/ model, else OPENROUTER_PRICES with every prompt token at the full input rate (None for a model with no
+    known rates). A capped run settles its reserve from this when the provider drops the receipt, instead of holding
+    the whole pre-dispatch bound against the cap."""
+    if model.startswith("openai/"):
+        return openai_list_cost(model, usage)
+    rates = OPENROUTER_PRICES.get(model)
+    if rates is None or not _complete_token_usage(usage):
+        return None
+    return usage["prompt_tokens"] * rates[0] + usage["completion_tokens"] * rates[1]
 
 
 def call_model(content: list, model: str, reasoning: str, api_key: str, max_tokens: int, timeout: int,
