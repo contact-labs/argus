@@ -135,6 +135,20 @@ def test_selection_reserve_uses_model_rates():
         harness.final_cost_bound(content, 2000, model='unpriced/model')
 
 
+def test_a_capped_run_reserves_openrouter_models_at_their_listed_rates():
+    """A model only OpenRouter serves (Claude Sonnet 5.5) is reservable under a spend cap from OPENROUTER_PRICES, at its
+    own rates and not Astra's, while a model neither table prices is still refused."""
+    content = [{'type': 'text', 'text': 'x' * 3000}]
+    astra = harness.final_cost_bound(content, 2000, model='openai/gpt-6-astra')
+    sonnet = harness.final_cost_bound(content, 2000, model='anthropic/claude-sonnet-5.5')
+    assert 0 < sonnet < astra
+    assert harness.known_rates('anthropic/claude-sonnet-5.5') == harness.OPENROUTER_PRICES['anthropic/claude-sonnet-5.5']
+    assert harness.known_rates('openai/gpt-6-astra') == (2.0e-5, 7.5e-5)
+    assert harness.known_rates('anthropic/claude-haiku-5.5') is None
+    with pytest.raises(ValueError, match='known rates'):
+        harness.final_cost_bound(content, 2000, model='anthropic/claude-haiku-5.5')
+
+
 def test_depth_presentation_origin_does_not_depend_on_rgb_times(tmp_path, monkeypatch):
     from test_camera_timing import recording
     ep = recording(tmp_path, np.arange(60) / 30)

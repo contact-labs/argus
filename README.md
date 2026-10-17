@@ -48,6 +48,43 @@ It is the only harness to combine native multi-format ingestion (rather than res
 | Other episode fields | Numeric channels, event flags, waveform packets and structured metadata are accessible through the same inspection interface. Spectral analysis of eligible waveforms requires a recorded sample rate. |
 | Task context | Instructions, annotations and calibration metadata provide context. The VLM checks publisher claims against the recording rather than assuming their correctness. |
 
+## Contact Labs quickstart
+
+This fork ([contact-labs/argus](https://github.com/contact-labs/argus)) tracks upstream and adds one thing: capped runs accept Claude Sonnet 5.5 and Claude Opus 5.5 through OpenRouter, priced from [`OPENROUTER_PRICES`](label/harness.py#L80). One OpenRouter key covers every model the pipeline calls, including GPT-6 Sol, which the harness uses on its own for resolution routing and field interpretation.
+
+```console
+brew install uv ffmpeg node                 # node only for the viewer tests
+uv sync --frozen
+export OPENROUTER_API_KEYS=sk-or-...        # in ~/.zshrc
+uv run --frozen --offline pytest -q         # no model calls
+```
+
+Put footage under the ignored `data/` folder, one folder per episode, with each camera's file named for its mount. These names map to the scene (`exo`), `left` and `right` views on a `teleop_arms` rig; an `instruction.txt` beside them reaches the model as the task, as a claim to check.
+
+```
+data/incoming/<batch>/
+  ep001/head.mp4  ep001/left_wrist.mp4  ep001/right_wrist.mp4  ep001/instruction.txt
+  ep002/...
+```
+
+Separate video files share no clock, so each camera is aligned from its own first frame. To align them on the recorder's clock, save each camera's per-frame capture times beside its video as a `.npy` whose name carries the camera's words and `timestamp` (`head-timestamp.npy`, one rising number per frame, in s, ms, us or ns), as [`frame_times`](prepare/formats.py#L3480) reads. Recorded state, depth and other sensors are read from a LeRobot dataset, MCAP or HDF5 file in the same folder, never from loose arrays.
+
+```console
+# free: read, check, build every request, serve the board, no model call
+uv run python -m review --data data/incoming/<batch> --rig teleop_arms \
+  --dataset-note "AgiBot G2, two 7-DoF arms, a head RGB-D camera and two wrist RGB-D cameras" \
+  --out data/review/<batch>_free --free
+uv run python -m board serve --board data/review/<batch>_free --clips data/review/<batch>_free/clips   # http://localhost:8896
+
+# paid, one job per model, each under its own cap in USD
+uv run python -m review --data data/incoming/<batch> --rig teleop_arms --dataset-note "..." \
+  --out data/review/<batch>_astra --cap 5
+uv run python -m review --data data/incoming/<batch> --rig teleop_arms --dataset-note "..." \
+  --model anthropic/claude-sonnet-5.5 --out data/review/<batch>_sonnet --cap 5
+```
+
+`report.json` in the job says what was read and how each camera was mapped; `dry/` holds the exact requests before anything is paid for; `run/` holds the model inputs and the billed receipts. Upstream's own instructions follow.
+
 ## Install and review
 
 You need Python 3.11, [uv](https://docs.astral.sh/uv/), and [`ffmpeg`](https://ffmpeg.org/ffmpeg.html)/[`ffprobe`](https://ffmpeg.org/ffprobe.html) 5.1 or newer.

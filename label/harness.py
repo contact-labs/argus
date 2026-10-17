@@ -74,6 +74,20 @@ OPENAI_PRICES = {"gpt-6-astra": ((1.0e-5, 1.0e-6, 5.0e-5), (2.0e-5, 2.0e-6, 7.5e
                  # Standard pricing: https://developers.openai.com/api/docs/models/gpt-6.1-sol
                  "gpt-6.1-sol": ((2.0e-6, 1.0e-7, 1.0e-5), (4.0e-6, 2.0e-7, 1.5e-5))}
 LONG_PROMPT_TOKENS = 272000
+# OpenRouter list prices (USD per token: input, output) for models only OpenRouter serves. A capped run reserves a
+# request's worst case from these before dispatch; OpenRouter's response then carries the billed cost, which settles
+# it. From https://openrouter.ai/api/v1/models on 2026-10-17; a model absent here is refused under a cap.
+OPENROUTER_PRICES = {"anthropic/claude-sonnet-5.5": (2.0e-6, 1.0e-5),
+                     "anthropic/claude-opus-5.5": (4.0e-6, 2.0e-5)}
+
+
+def known_rates(model: str) -> tuple[float, float] | None:
+    """The (input, output) USD per token a capped run may reserve with: an openai/ model's highest OpenAI list
+    prices, else its OPENROUTER_PRICES entry, or None for a model with no verified rates."""
+    if model.startswith("openai/"):
+        tiers = OPENAI_PRICES.get(model.split("/", 1)[-1])
+        return (max(t[0] for t in tiers), max(t[2] for t in tiers)) if tiers else None
+    return OPENROUTER_PRICES.get(model)
 
 # Requests carry at most 500 images, and at most IMAGE_LIMIT_BYTES of images as the provider counts them
 # (label/episode.py steps the cell width down to fit).
@@ -237,8 +251,7 @@ def label_episode(ep_dir: Path, out_path: Path, *, model: str, reasoning: str, a
     resolved = policy.resolve(context, model=model, reasoning=reasoning, sample_fps=sample_fps,
                               task_mode=task_mode, dataset_note=dataset_note)
     model, reasoning = resolved['model'], resolved['reasoning']
-    if not dry_run and require_known_pricing and (not model.startswith('openai/')
-            or model.split('/', 1)[-1] not in OPENAI_PRICES):
+    if not dry_run and require_known_pricing and known_rates(model) is None:
         raise ValueError(f'No verified pricing rates for {model}; a spend cap requires known rates')
     if not dry_run and not is_openrouter_key(api_key) and not model.startswith('openai/'):
         raise ValueError(f'{model} requires an OpenRouter key; no request was dispatched.')
@@ -509,13 +522,12 @@ def episode_cost(result: dict) -> float:
 
 def final_cost_bound(content: list, max_tokens: int, *, model=DEFAULT_MODEL, require_known_pricing=True) -> float:
     """Reserve a generous input allowance and the full output limit before dispatch."""
-    tiers = OPENAI_PRICES.get(model.split('/', 1)[-1]) if model.startswith('openai/') else None
-    if tiers is None and require_known_pricing:
+    rates = known_rates(model)
+    if rates is None and require_known_pricing:
         raise ValueError(f'No verified pricing rates for {model}; a spend cap requires known rates')
     # Uncapped custom models retain a provisional hold if their provider loses the cost receipt.
     # This fallback is never used to authorize a capped dispatch.
-    rates = tiers or OPENAI_PRICES[DEFAULT_MODEL.split('/', 1)[-1]]
-    price_in, price_out = max(t[0] for t in rates), max(t[2] for t in rates)
+    price_in, price_out = rates or known_rates(DEFAULT_MODEL)
     import io
     from PIL import Image
     text_bytes = sum(len(c.get('text', '').encode('utf-8')) for c in content if c.get('type') == 'text')

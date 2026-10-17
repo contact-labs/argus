@@ -12,6 +12,10 @@
    "model": "anthropic/claude-opus-5.5",
    "name": "Claude Opus 5.5"
   },
+  "sonnet55": {
+   "model": "anthropic/claude-sonnet-5.5",
+   "name": "Claude Sonnet 5.5"
+  },
   "sol6": {
    "model": "openai/gpt-6-sol",
    "name": "GPT-6 Sol"
